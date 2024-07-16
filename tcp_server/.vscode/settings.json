@@ -1,0 +1,25 @@
+{
+  "C_Cpp.intelliSenseEngine": "default",
+  "idf.adapterTargetName": "esp32s3",
+  "idf.openOcdConfigs": [
+    "board/esp32s3-builtin.cfg"
+  ],
+  "files.associations": {
+    "protocol_examples_common.h": "c",
+    "freertos.h": "c",
+    "compare": "cpp",
+    "cstdint": "cpp",
+    "task.h": "c",
+    "connect_wifi.h": "c",
+    "lib_tcp.h": "c",
+    "esp_ping.h": "c",
+    "esp_system.h": "c",
+    "esp_http_client.h": "c",
+    "esp_crt_bundle.h": "c",
+    "event_groups.h": "c",
+    "uart.h": "c",
+    "mqtt_client.h": "c"
+  },
+  "idf.portWin": "COM37",
+  "idf.flashType": "UART"
+}
