@@ -1,0 +1,15 @@
+dependencies:
+  idf:
+    component_hash: null
+    source:
+      type: idf
+    version: 5.2.2
+  protocol_examples_common:
+    component_hash: null
+    source:
+      path: C:\Users\ASUS\esp\v5.2.2\esp-idf\examples\common_components\protocol_examples_common
+      type: local
+    version: '*'
+manifest_hash: 234d3bb20208980dd423468615ab9d46132303ae12f7c08ab1bbe00c164bdd13
+target: esp32c3
+version: 1.0.0

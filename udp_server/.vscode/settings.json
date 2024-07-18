@@ -1,0 +1,16 @@
+{
+  "C_Cpp.intelliSenseEngine": "default",
+  "idf.portWin": "COM37",
+  "idf.adapterTargetName": "esp32s3",
+  "idf.openOcdConfigs": [
+    "board/esp32s3-builtin.cfg"
+  ],
+  "idf.flashType": "UART",
+  "files.associations": {
+    "esp_wifi.h": "c",
+    "param.h": "c",
+    "sockets.h": "c",
+    "connect_wifi.h": "c",
+    "esp_timer.h": "c"
+  }
+}
