@@ -190,7 +190,7 @@
 // #include "lwip/sys.h"
 // #include <lwip/netdb.h>
 
-#define SSID "minz"
+#define SSID "minzdat"
 #define PASS "12345678"
 #define EXAMPLE_MAX_STA_CONN 4
 #define PORT 1234

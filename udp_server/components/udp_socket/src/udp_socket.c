@@ -32,20 +32,22 @@ void tranmister(void *pvParameters) {
     broadcast_addr.sin_port = htons(PORT);
     int sock = (int)pvParameters;
 
-        char tx_buffer[128];
-while(1){
-          vTaskDelay(3000 / portTICK_PERIOD_MS);
-            count++;
-            snprintf(tx_buffer, sizeof(tx_buffer), "Send from server : %d", count);
+    char tx_buffer[128];
+    while(1){
+        vTaskDelay(3000 / portTICK_PERIOD_MS);
+        count++;
+        snprintf(tx_buffer, sizeof(tx_buffer), "Send from server : %d", count);
 
-            ESP_LOGW(TAG,"Send to broadcast: %d",count);
-            // int err = sendto(sock, rx_buffer, len, 0, (struct sockaddr *)&source_addr, sizeof(source_addr));
-            start=esp_timer_get_time();
-            int err = sendto(sock, tx_buffer,  sizeof(tx_buffer), 0, (struct sockaddr *)&broadcast_addr, sizeof(broadcast_addr));
+        ESP_LOGW(TAG,"Send to broadcast: %d",count);
+        // int err = sendto(sock, rx_buffer, len, 0, (struct sockaddr *)&source_addr, sizeof(source_addr));
+        start=esp_timer_get_time();
+        int err = sendto(sock, tx_buffer,  sizeof(tx_buffer), 0, (struct sockaddr *)&broadcast_addr, sizeof(broadcast_addr));
+        
+        if (err < 0) {
+            ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
+        }
 
-            if (err < 0) {
-                ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
-             }}
+    }
 }
 static void udp_server_task(void *pvParameters)
 {
@@ -93,7 +95,7 @@ static void udp_server_task(void *pvParameters)
 
 
 
-        xTaskCreate(tranmister, "tranmister", 4096, (void*)sock, 5, NULL);
+    xTaskCreate(tranmister, "tranmister", 4096, (void*)sock, 5, NULL);
 
     while (1) {
         // ESP_LOGI(TAG, "Waiting for data");
@@ -111,6 +113,18 @@ static void udp_server_task(void *pvParameters)
             ESP_LOGI(TAG, "time= %d ms", time_s);
             // ESP_LOGI(TAG, "%s", rx_buffer);
 
+            vTaskDelay(pdMS_TO_TICKS(1000)); // Trì hoãn 1000 ms (1 giây)
+
+            // Phản hồi dữ liệu nhận được về cho client
+            int err = sendto(sock, rx_buffer, len, 0, (struct sockaddr *)&source_addr, sizeof(source_addr));
+            if (err < 0) {
+                ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
+                break;
+            } else {
+                // In dữ liệu gửi đi thành công
+                ESP_LOGI(TAG, "Sent %d bytes to %s: %s from task udp_socket", len, addr_str, rx_buffer);
+            }
+
         }
     }
 
@@ -124,6 +138,6 @@ static void udp_server_task(void *pvParameters)
 }
 
 void create_task_udp_server(){
-        xTaskCreate(udp_server_task, "udp_server", 4096, NULL, 5, NULL);
+    xTaskCreate(udp_server_task, "udp_server", 4096, NULL, 5, NULL);
 
 }

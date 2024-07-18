@@ -11,7 +11,7 @@
 #include "connect_wifi.h"
 #define PORT 1234
 #define SERVER_IP "192.168.4.1"  // Replace with the server's IP address
-#define SSID "minz"
+#define SSID "minzdat"
 #define PASS "12345678"
 static const char *TAG = "udp_client";
 int count=0;
@@ -118,7 +118,7 @@ void udp_client_task(void *pvParameters)
 
 void app_main(void)
 {
-     wifi_init_sta(SSID,PASS);
+    wifi_init_sta(SSID,PASS);
 
     // ESP_ERROR_CHECK(nvs_flash_init());
     xTaskCreate(udp_client_task, "udp_client_task", 4096, NULL, 5, NULL);
