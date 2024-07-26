@@ -7,9 +7,9 @@ dependencies:
   protocol_examples_common:
     component_hash: null
     source:
-      path: C:\Users\tminh\esp\v5.2.2\esp-idf\examples\common_components\protocol_examples_common
+      path: C:\Users\ASUS\esp\v5.2.2\esp-idf\examples\common_components\protocol_examples_common
       type: local
     version: '*'
-manifest_hash: 98bc463e366262f167a0c7dedca8f29c2c30e612eb556e4a63e91d404e41a457
+manifest_hash: 234d3bb20208980dd423468615ab9d46132303ae12f7c08ab1bbe00c164bdd13
 target: esp32s3
 version: 1.0.0

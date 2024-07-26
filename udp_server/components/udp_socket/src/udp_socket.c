@@ -110,20 +110,20 @@ static void udp_server_task(void *pvParameters)
             ESP_LOGI(TAG, "Received %d bytes from %s: %s", len, addr_str, rx_buffer);
             stop=esp_timer_get_time();
             time_s=stop-start;
-            ESP_LOGI(TAG, "time= %d ms", time_s);
+            ESP_LOGI(TAG, "time= %d ms", time_s/1000);
             // ESP_LOGI(TAG, "%s", rx_buffer);
 
-            vTaskDelay(pdMS_TO_TICKS(1000)); // Trì hoãn 1000 ms (1 giây)
+            // vTaskDelay(pdMS_TO_TICKS(1000)); // Trì hoãn 1000 ms (1 giây)
 
             // Phản hồi dữ liệu nhận được về cho client
-            int err = sendto(sock, rx_buffer, len, 0, (struct sockaddr *)&source_addr, sizeof(source_addr));
-            if (err < 0) {
-                ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
-                break;
-            } else {
-                // In dữ liệu gửi đi thành công
-                ESP_LOGI(TAG, "Sent %d bytes to %s: %s from task udp_socket", len, addr_str, rx_buffer);
-            }
+            // int err = sendto(sock, rx_buffer, len, 0, (struct sockaddr *)&source_addr, sizeof(source_addr));
+            // if (err < 0) {
+            //     ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
+            //     break;
+            // } else {
+            //     // In dữ liệu gửi đi thành công
+            //     ESP_LOGI(TAG, "Sent %d bytes to %s: %s from task udp_socket", len, addr_str, rx_buffer);
+            // }
 
         }
     }
