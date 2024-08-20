@@ -40,7 +40,7 @@ int8_t rssi;
     float sin_angle3;
     float sin_angle4;
 
-    void send_data(){
+void send_data(){
     char data[100];
     ESP_LOGI(TAG,"Receive data from queue successfully");
             sin_angle = sin(angle*0.06283)*10+10;
@@ -59,14 +59,14 @@ int8_t rssi;
 }
 static void mqtt_task(void *pvParameters)
 {
-    char data[100];
+    // char data[100];
     // SensorsData sensor;
-    BaseType_t ret;
-    float angle=-100;
-    float sin_angle;
-    float sin_angle2;
-    float sin_angle3;
-    float sin_angle4;
+    // BaseType_t ret;
+    // float angle=-100;
+    // float sin_angle;
+    // float sin_angle2;
+    // float sin_angle3;
+    // float sin_angle4;
     while(1)
     {
         // ret=xQueueReceive(g_publisher_queue,&sensor,(TickType_t)portMAX_DELAY);

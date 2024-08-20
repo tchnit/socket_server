@@ -1,4 +1,5 @@
 #include "read_serial.h"
+#include "pub_sub_client.h"
 
 const char *TAG="Read Serial";
 #include "freertos/FreeRTOS.h"
@@ -112,13 +113,13 @@ typedef struct {
     float ph_value;
 } sensor_data_t;
 
-
 #define MAC2STR(a) (a)[0], (a)[1], (a)[2], (a)[3], (a)[4], (a)[5]
 #define MACSTR "%02x:%02x:%02x:%02x:%02x:%02x"
 
 static void uart_event(void *pvParameters)
 {
     uart_event_t event;
+    char data[100];
     size_t buffered_size;
     unsigned char encrypted_message[sizeof(sensor_data_t)];
     unsigned char encrypted_message_a[sizeof(sensor_data_t)];
@@ -147,12 +148,14 @@ static void uart_event(void *pvParameters)
     ESP_LOGI("SENSOR_DATA", "Dissolved Oxygen: %.6f", recv_data->do_value);
     ESP_LOGI("SENSOR_DATA", "Temperature PHG: %.6f", recv_data->temperature_phg);
     ESP_LOGI("SENSOR_DATA", "pH: %.6f", recv_data->ph_value);
- 
 
+    sprintf(data, "temperature_rdo: %f, do: %f, temperature_phg: %f, ph: %f",recv_data->temperature_rdo,recv_data->do_value,recv_data->temperature_phg,recv_data->ph_value);
+            // xEventGroupWaitBits(g_wifi_event, g_constant_wifi_connected_bit, pdFALSE, pdTRUE, portMAX_DELAY);
+            //g_index_queue=0;
+    data_to_mqtt(data, "v1/devices/me/telemetry",500, 1);
                     // send(sock, dtmp,event.size, 0);
                     // uart_write_bytes(EX_UART_NUM, (const char*) dtmp, event.size);
                     // printe("bufferacbd");
-
         }
     }
     free(dtmp);

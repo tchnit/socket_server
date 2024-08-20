@@ -1,4 +1,4 @@
 color a
 git add .
 git commit -m "push_new"
-git push origin main
+git push 
