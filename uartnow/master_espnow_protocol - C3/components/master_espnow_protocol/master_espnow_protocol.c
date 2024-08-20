@@ -216,7 +216,7 @@ void master_espnow_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t *
                     ESP_LOGI(TAG, "MAC " MACSTR " (length: %d): %.*s",MAC2STR(recv_cb->mac_addr), recv_cb->data_len, recv_cb->data_len, (char *)recv_cb->data);
                     ESP_LOGW(TAG, "Receive from " MACSTR " - Counting: %d", MAC2STR(allowed_connect_slaves[i].peer_addr), allowed_connect_slaves[i].count_receive);
                     // dump_uart((const char *)recv_cb->data);
-                    dump_uart((const char *)recv_data);
+                    // dump_uart(recv_data);
                     break;
                 }
                 else{

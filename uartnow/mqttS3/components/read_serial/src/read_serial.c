@@ -55,7 +55,15 @@ void encrypt_message(const unsigned char *input, unsigned char *output, size_t l
     mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_ENCRYPT, length, iv, input, output);
     mbedtls_aes_free(&aes);
 }
-
+void decrypt_message(const unsigned char *input, unsigned char *output, size_t length) {
+    mbedtls_aes_context aes;
+    unsigned char key[16] = "7832477891326794";  // Khóa bí mật (same as used for encryption)
+    unsigned char iv[16] =  "4892137489723148";    // Vector khởi tạo (same as used for encryption)
+    mbedtls_aes_init(&aes);
+    mbedtls_aes_setkey_dec(&aes, key, 128);  // Thiết lập khóa giải mã
+    mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_DECRYPT, length, iv, input, output); // Giải mã
+    mbedtls_aes_free(&aes);
+}
 void dump_uart(const char *message){
     printf("send\n");
     size_t len = strlen(message);
@@ -105,59 +113,41 @@ typedef struct {
 } sensor_data_t;
 
 
-void decrypt_message(const unsigned char *input, unsigned char *output, size_t length) {
-    mbedtls_aes_context aes;
-    unsigned char key[16] = "7832477891326794";  // Khóa bí mật (same as used for encryption)
-    unsigned char iv[16] =  "4892137489723148";    // Vector khởi tạo (same as used for encryption)
-    mbedtls_aes_init(&aes);
-    mbedtls_aes_setkey_dec(&aes, key, 128);  // Thiết lập khóa giải mã
-    mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_DECRYPT, length, iv, input, output); // Giải mã
-    mbedtls_aes_free(&aes);
-}
-
 #define MAC2STR(a) (a)[0], (a)[1], (a)[2], (a)[3], (a)[4], (a)[5]
 #define MACSTR "%02x:%02x:%02x:%02x:%02x:%02x"
+
 static void uart_event(void *pvParameters)
 {
     uart_event_t event;
     size_t buffered_size;
-    unsigned char encrypted_message[BUF_SIZE];
-    unsigned char decrypted_message[BUF_SIZE];
+    unsigned char encrypted_message[sizeof(sensor_data_t)];
+    unsigned char encrypted_message_a[sizeof(sensor_data_t)];
+    unsigned char decrypted_message[sizeof(sensor_data_t)];
     uint8_t* dtmp = (uint8_t*) malloc(RD_BUF_SIZE);
    
     while (true){
         if (xQueueReceive(uart0_queue, (void *)&event, (TickType_t)portMAX_DELAY)) {
             // bzero(dtmp, RD_BUF_SIZE);
             // memset(dtmp, 0, RD_BUF_SIZE);
-
                     // ESP_LOGI(TAG, "[Size DATA]: %d", event.size);
-                    int length = uart_read_bytes(UART_NUM, encrypted_message, event.size, portMAX_DELAY);
-                    ESP_LOGW(TAG, "Reicv %d bytes : ",event.size);
-                    printf("%s \n",encrypted_message);
-
-
-                     ESP_LOGW(TAG, "Descrypt: ");
-
+                int length = uart_read_bytes(UART_NUM, encrypted_message, sizeof(encrypted_message), portMAX_DELAY);
+                ESP_LOGW(TAG, "Reicv %d bytes : ",event.size);
+                printf("%s \n",encrypted_message);
+                ESP_LOGW(TAG, "Descrypt: ");
+                // encrypt_message(encrypted_message,encrypted_message_a,sizeof(encrypted_message));
+                decrypt_message(encrypted_message,decrypted_message, sizeof(decrypted_message));
+                // decrypted_message[length] = '\0';
+                printf("%s \n", decrypted_message);
+                sensor_data_t *recv_data = (sensor_data_t *)decrypted_message;
 
     // In các giá trị cảm biến
-                    decrypt_message(encrypted_message, decrypted_message, length);
-                    decrypted_message[length] = '\0';
-                    printf("%s \n", decrypted_message);
-                    
-    sensor_data_t *recv_data = (sensor_data_t *)encrypted_message;
-    // sensor_data_t *recv_data = (sensor_data_t *)decrypted_message;
-
-    ESP_LOGW(TAG, "MAC " MACSTR " (length: %d): ",MAC2STR(recv_data->mac), length);
-
-        // ESP_LOGI("UART", "MAC Address: %02X:%02X:%02X:%02X:%02X:%02X",
-        //          recv_data->mac[0], recv_data->mac[1], recv_data->mac[2],
-        //          recv_data->mac[3], recv_data->mac[4], recv_data->mac[5]);    
+    ESP_LOGW("SENSOR_DATA", "MAC " MACSTR " (length: %d): ",MAC2STR(recv_data->mac), length);
+    ESP_LOGI("SENSOR_DATA", "RSSI: %d", recv_data->rssi);
     ESP_LOGI("SENSOR_DATA", "Temperature RDO: %.6f", recv_data->temperature_rdo);
     ESP_LOGI("SENSOR_DATA", "Dissolved Oxygen: %.6f", recv_data->do_value);
     ESP_LOGI("SENSOR_DATA", "Temperature PHG: %.6f", recv_data->temperature_phg);
     ESP_LOGI("SENSOR_DATA", "pH: %.6f", recv_data->ph_value);
-    ESP_LOGI("SENSOR_DATA", "RSSI: %d", recv_data->rssi);
-
+ 
 
                     // send(sock, dtmp,event.size, 0);
                     // uart_write_bytes(EX_UART_NUM, (const char*) dtmp, event.size);

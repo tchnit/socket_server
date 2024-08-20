@@ -5,11 +5,8 @@ const char *TAG="Read Serial";
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "freertos/queue.h"
-#include <string.h>
 #include "driver/uart.h"
 #include "driver/gpio.h"
-
-
 
 #include "cJSON.h"
 
@@ -55,26 +52,16 @@ void encrypt_message(const unsigned char *input, unsigned char *output, size_t l
     mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_ENCRYPT, length, iv, input, output);
     mbedtls_aes_free(&aes);
 }
-// typedef struct {
-//     uint8_t mac[6];
-//     float temperature_mcu;
-//     int rssi;
-//     float temperature_rdo;
-//     float do_value;
-//     float temperature_phg;
-//     float ph_value;
-// } sensor_data_t;
-void dump_uart(const char *message){
+
+void dump_uart(sensor_data_tt *message){
     
-    size_t len = strlen(message);
+    size_t len = sizeof(sensor_data_tt);
     printf("send \n");
-    unsigned char encrypted_message[BUF_SIZEz]; // AES block size = 16 bytes
+    uint8_t encrypted_message[len]; // AES block size = 16 bytes
     // Mã hóa tin nhắn
-    encrypt_message((const unsigned char *)message, encrypted_message, len);
+    encrypt_message((unsigned char *)message, encrypted_message, len);
     // uart_write_bytes(UART_NUM_P2, (const char *)message, sizeof(sensor_data_t));
-    uart_write_bytes(UART_NUM_P2, (const char *)message, 32);
-
-
+    uart_write_bytes(UART_NUM_P2, (unsigned char *)encrypted_message, len);
 }
 
 void add_json(){
