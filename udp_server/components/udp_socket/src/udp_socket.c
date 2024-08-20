@@ -24,6 +24,16 @@ int start=0;
 int stop=0;
 int time_s=0;
 
+void get_rssi() {
+    wifi_ap_record_t ap_info;
+    esp_err_t result = esp_wifi_sta_get_ap_info(&ap_info);
+    
+    if (result == ESP_OK) {
+        ESP_LOGI("WiFi", "RSSI: %d", ap_info.rssi);
+    } else {
+        ESP_LOGE("WiFi", "Failed to get RSSI: %s", esp_err_to_name(result));
+    }
+}
 void tranmister(void *pvParameters) {
 
     struct sockaddr_in broadcast_addr;
@@ -111,6 +121,7 @@ static void udp_server_task(void *pvParameters)
             stop=esp_timer_get_time();
             time_s=stop-start;
             ESP_LOGI(TAG, "time= %d ms", time_s/1000);
+            get_rssi();
             // ESP_LOGI(TAG, "%s", rx_buffer);
 
             // vTaskDelay(pdMS_TO_TICKS(1000)); // Trì hoãn 1000 ms (1 giây)
