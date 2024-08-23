@@ -123,7 +123,15 @@ void master_espnow_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status
     ESP_LOGI(TAG, "Send callback: MAC Address " MACSTR ", Status: %s",
         MAC2STR(mac_addr), (status == ESP_NOW_SEND_SUCCESS) ? "Success" : "Fail");
 }
-
+typedef struct {
+    uint16_t sensor1;
+    uint16_t sensor2;
+    uint16_t sensor3;
+    uint16_t sensor4;
+    uint16_t sensor5;
+    uint8_t mac[6];
+    uint8_t status;
+} sensor_data_t;
 
 void master_espnow_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t *data, int len)
 {
@@ -213,32 +221,21 @@ void master_espnow_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t *
                     allowed_connect_slaves[i].start_time = 0;
                     allowed_connect_slaves[i].check_connect_errors = 0;
                     allowed_connect_slaves[i].count_receive++;
+
                     ESP_LOGI(TAG, "MAC " MACSTR " (length: %d): %.*s",MAC2STR(recv_cb->mac_addr), recv_cb->data_len, recv_cb->data_len, (char *)recv_cb->data);
                     ESP_LOGW(TAG, "Receive from " MACSTR " - Counting: %d", MAC2STR(allowed_connect_slaves[i].peer_addr), allowed_connect_slaves[i].count_receive);
-                    // dump_uart((const char *)recv_cb->data);
-                    // dump_uart(recv_data);
+                    dump_uart((const char *)recv_cb->data);
+
                     break;
                 }
-                else if (memcmp(recv_cb->mac_addr,recv_data->mac,6)==0)
-                {
-                    allowed_connect_slaves[i].start_time = 0;
-                    allowed_connect_slaves[i].check_connect_errors = 0;
-                    allowed_connect_slaves[i].count_receive++;
+                else{
                         // ESP_LOGW("","%s",(char *)recv_cb->data);
-                        // recv_data->rssi=-5672367670;
-                        ESP_LOGW(TAG, "MAC " MACSTR " (length: %d): %.*s",MAC2STR(recv_cb->mac_addr), recv_cb->data_len, recv_cb->data_len, (char *)recv_data);
-                        
-                        ESP_LOGW(TAG, "MAC " MACSTR " (length: %d): %.*s",MAC2STR(recv_data->mac), recv_cb->data_len, recv_cb->data_len, (char *)recv_data);
-                            ESP_LOGI("SENSOR_DATA", "Temperature MCU: %.2f", recv_data->temperature_mcu);
-                            ESP_LOGI("SENSOR_DATA", "Temperature RDO: %.2f", recv_data->temperature_rdo);
-                            ESP_LOGI("SENSOR_DATA", "Dissolved Oxygen: %.2f", recv_data->do_value);
-                            ESP_LOGI("SENSOR_DATA", "Temperature PHG: %.2f", recv_data->temperature_phg);
-                            ESP_LOGI("SENSOR_DATA", "pH: %.2f", recv_data->ph_value);
-                            ESP_LOGI("SENSOR_DATA", "RSSI: %d", recv_data->rssi); // Chỉ in nếu có thành viên rssi
-                        // dump_uart((const char *)recv_cb->data);
-                        dump_uart(recv_data);
+                        ESP_LOGW(TAG, "MAC " MACSTR " (length: %d): %.*s",MAC2STR(recv_cb->mac_addr), recv_cb->data_len, recv_cb->data_len, (char *)recv_cb->data);
 
-                        break; 
+                        ESP_LOGW(TAG, "Received data from " MACSTR ": Sensor1=%d, Sensor2=%d, Sensor3=%d, Sensor4=%d, Sensor5=%d, Status=%d",
+                 MAC2STR(mac_addr), recv_data->sensor1, recv_data->sensor2, recv_data->sensor3, recv_data->sensor4, recv_data->sensor5, recv_data->status);
+  
+                        dump_uart((const char *)recv_cb->data);
 
                 }
 
