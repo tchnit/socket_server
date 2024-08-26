@@ -11,7 +11,7 @@ const char *TAG="Read Serial";
 #include "driver/gpio.h"
 
 
-
+#include "esp_crc.h"
 #include "cJSON.h"
 
 #define PATTERN_CHR_NUM    (3)         /*!< Set the number of consecutive and identical characters received by receiver which defines a UART pattern*/
@@ -39,7 +39,6 @@ void uart_config(void){
     // uart_set_pin(UART_NUM, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
     uart_set_pin(UART_NUM, TX_GPIO_NUM, RX_GPIO_NUM, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
     // uart0_queue = xQueueCreate(10, BUF_SIZE);
-
     // uart_set_pin(EX_UART_NUM, TX_PIN, RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
 }
 
@@ -103,27 +102,89 @@ void add_json(){
 #define BUF_SIZEz (1024)
 
 
+// typedef struct {
+//     uint8_t mac[6];
+//     float temperature_mcu;
+//     int rssi;
+//     float temperature_rdo;
+//     float do_value;
+//     float temperature_phg;
+//     float ph_value;
+// } sensor_data_t;
+
 typedef struct {
-    uint8_t mac[6];
     float temperature_mcu;
     int rssi;
     float temperature_rdo;
     float do_value;
     float temperature_phg;
     float ph_value;
+    char message[STILL_CONNECTED_MSG_SIZE];
 } sensor_data_t;
+
+typedef struct {
+    uint8_t type;                         //[1 bytes] Broadcast or unicast ESPNOW data.
+    uint16_t seq_num;                     //[2 bytes] Sequence number of ESPNOW data.
+    uint16_t crc;                         //[2 bytes] CRC16 value of ESPNOW data.
+    uint8_t payload[120];                  //Real payload of ESPNOW data.
+} __attribute__((packed)) espnow_data_t;
 
 #define MAC2STR(a) (a)[0], (a)[1], (a)[2], (a)[3], (a)[4], (a)[5]
 #define MACSTR "%02x:%02x:%02x:%02x:%02x:%02x"
+
+void parse_payload(const espnow_data_t *espnow_data) {
+
+    espnow_data_t *buf = (espnow_data_t *)espnow_data;
+   ESP_LOGI(TAG, "  type   : %d", buf->type);
+    ESP_LOGI(TAG, "  seq_num: %d", buf->seq_num);
+
+
+    uint16_t crc, crc_cal = 0;
+    ESP_LOGI(TAG, "  crc_buffer  : %d", buf->crc);
+    crc = buf->crc;
+    buf->crc = 0;
+    crc_cal = esp_crc16_le(UINT16_MAX, (uint8_t const *)buf, 250);
+
+    ESP_LOGI(TAG, "  crc_receiver: %d", crc_cal);
+
+
+    if (sizeof(buf->payload) < sizeof(sensor_data_t)) 
+    {
+        ESP_LOGE(TAG, "Payload size is too small to parse sensor_data_t");
+        return;
+    }
+
+    sensor_data_t sensor_data;
+    memcpy(&sensor_data, buf->payload, sizeof(sensor_data_t));
+
+    // ESP_LOGW(TAG, "MAC " MACSTR " (length: %d): %.*s",MAC2STR(sensor_data.mac), recv_cb->data_len, recv_cb->data_len, (char *)sensor_data);
+
+    ESP_LOGI(TAG, "Parsed Sensor Data:");
+
+ 
+    ESP_LOGI(TAG, "     MCU Temperature: %.2f", sensor_data.temperature_mcu);
+    ESP_LOGI(TAG, "     RSSI: %d", sensor_data.rssi);
+    ESP_LOGI(TAG, "     RDO Temperature: %.2f", sensor_data.temperature_rdo);
+    ESP_LOGI(TAG, "     DO Value: %.2f", sensor_data.do_value);
+    ESP_LOGI(TAG, "     PHG Temperature: %.2f", sensor_data.temperature_phg);
+    ESP_LOGI(TAG, "     PH Value: %.2f", sensor_data.ph_value);
+    ESP_LOGI(TAG, "     Message: %s", sensor_data.message);
+
+    // memcpy(payload, sensor_data.message, sizeof(sensor_data.message));
+
+    // espnow_data->crc = esp_crc16_le(UINT16_MAX, (uint8_t const *)espnow_data, sizeof(sensor_data_t));
+
+}
+
 
 static void uart_event(void *pvParameters)
 {
     uart_event_t event;
     char data[100];
     size_t buffered_size;
-    unsigned char encrypted_message[sizeof(sensor_data_t)];
-    unsigned char encrypted_message_a[sizeof(sensor_data_t)];
-    unsigned char decrypted_message[sizeof(sensor_data_t)];
+    unsigned char encrypted_message[sizeof(espnow_data_t)];
+    unsigned char encrypted_message_a[sizeof(espnow_data_t)];
+    unsigned char decrypted_message[sizeof(espnow_data_t)];
     uint8_t* dtmp = (uint8_t*) malloc(RD_BUF_SIZE);
    
     while (true){
@@ -132,27 +193,29 @@ static void uart_event(void *pvParameters)
             // memset(dtmp, 0, RD_BUF_SIZE);
                     // ESP_LOGI(TAG, "[Size DATA]: %d", event.size);
                 int length = uart_read_bytes(UART_NUM, encrypted_message, sizeof(encrypted_message), portMAX_DELAY);
-                ESP_LOGW(TAG, "Reicv %d bytes : ",event.size);
+                ESP_LOGW(TAG, "Reicv %d bytes : ",length);
                 printf("%s \n",encrypted_message);
                 ESP_LOGW(TAG, "Descrypt: ");
                 // encrypt_message(encrypted_message,encrypted_message_a,sizeof(encrypted_message));
                 decrypt_message(encrypted_message,decrypted_message, sizeof(decrypted_message));
                 // decrypted_message[length] = '\0';
                 printf("%s \n", decrypted_message);
-                sensor_data_t *recv_data = (sensor_data_t *)decrypted_message;
+                espnow_data_t *recv_data = (espnow_data_t *)encrypted_message;
 
     // In các giá trị cảm biến
-    ESP_LOGW("SENSOR_DATA", "MAC " MACSTR " (length: %d): ",MAC2STR(recv_data->mac), length);
-    ESP_LOGI("SENSOR_DATA", "RSSI: %d", recv_data->rssi);
-    ESP_LOGI("SENSOR_DATA", "Temperature RDO: %.6f", recv_data->temperature_rdo);
-    ESP_LOGI("SENSOR_DATA", "Dissolved Oxygen: %.6f", recv_data->do_value);
-    ESP_LOGI("SENSOR_DATA", "Temperature PHG: %.6f", recv_data->temperature_phg);
-    ESP_LOGI("SENSOR_DATA", "pH: %.6f", recv_data->ph_value);
+    parse_payload(recv_data);
+    // ESP_LOGW("SENSOR_DATA", "MAC " MACSTR " (length: %d): ",MAC2STR(recv_data->mac), length);
+    // ESP_LOGI("SENSOR_DATA", "MAC " MACSTR " (length: %d): ",MAC2STR(recv_data->mac), length);
+    // ESP_LOGI("SENSOR_DATA", "RSSI: %d", recv_data->rssi);
+    // ESP_LOGI("SENSOR_DATA", "Temperature RDO: %.6f", recv_data->temperature_rdo);
+    // ESP_LOGI("SENSOR_DATA", "Dissolved Oxygen: %.6f", recv_data->do_value);
+    // ESP_LOGI("SENSOR_DATA", "Temperature PHG: %.6f", recv_data->temperature_phg);
+    // ESP_LOGI("SENSOR_DATA", "pH: %.6f", recv_data->ph_value);
 
-    sprintf(data, "temperature_rdo: %f, do: %f, temperature_phg: %f, ph: %f",recv_data->temperature_rdo,recv_data->do_value,recv_data->temperature_phg,recv_data->ph_value);
+    // sprintf(data, "temperature_rdo: %f, do: %f, temperature_phg: %f, ph: %f",recv_data->temperature_rdo,recv_data->do_value,recv_data->temperature_phg,recv_data->ph_value);
             // xEventGroupWaitBits(g_wifi_event, g_constant_wifi_connected_bit, pdFALSE, pdTRUE, portMAX_DELAY);
             //g_index_queue=0;
-    data_to_mqtt(data, "v1/devices/me/telemetry",500, 1);
+    // data_to_mqtt(data, "v1/devices/me/telemetry",500, 1);
                     // send(sock, dtmp,event.size, 0);
                     // uart_write_bytes(EX_UART_NUM, (const char*) dtmp, event.size);
                     // printe("bufferacbd");
