@@ -169,7 +169,7 @@ void sendd(){
     {
     uart_send_struct_with_checksum(&sensor_data);
         // uart_write_bytes(UART_NUM, (const char*)sensor_data, sizeof);
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    vTaskDelay(100 / portTICK_PERIOD_MS);
     }
 }
 int countt=0;

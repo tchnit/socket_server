@@ -7,14 +7,14 @@ void test_allowed_connect_slaves_to_nvs(list_slaves_t *test_allowed_connect_slav
     memset(test_allowed_connect_slaves, 0, sizeof(list_slaves_t) * MAX_SLAVES);
     
     // MASTER hard-coded MAC addresses and statuses
-    uint8_t mac1[ESP_NOW_ETH_ALEN] = {0x48, 0x27, 0xe2, 0xc7, 0x21, 0x7c};
-    // 48:27:e2:c7:21:7c
+    uint8_t mac1[ESP_NOW_ETH_ALEN] = {0xf4, 0x12, 0xfa, 0x42, 0xa3, 0xdc};
+    // f4:12:fa:42:a3:dc
     uint8_t mac2[ESP_NOW_ETH_ALEN] = {0x34, 0x85, 0x18, 0x02, 0xea, 0x44};
     uint8_t mac3[ESP_NOW_ETH_ALEN] = {0x34, 0x85, 0x18, 0x03, 0x95, 0x08};
     
     // Add MAC addresses and statuses to the list
     memcpy(test_allowed_connect_slaves[0].peer_addr, mac1, ESP_NOW_ETH_ALEN);
-    test_allowed_connect_slaves[0].status = true;   // Offline
+    test_allowed_connect_slaves[0].status = false;   // Offline
     
     memcpy(test_allowed_connect_slaves[1].peer_addr, mac2, ESP_NOW_ETH_ALEN);
     test_allowed_connect_slaves[1].status = false;    // Online

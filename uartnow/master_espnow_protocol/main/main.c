@@ -1,19 +1,22 @@
 #include <master_espnow_protocol.h>
-#include "read_serial.h"
 
 
 
+// uint8_t request_connect_uart[]="request_connect";
+// uint8_t reponse_connect_uart[20];
+// #define RESPONSE_AGREE_CONNECT      "AGREE_connect"
 
 
 void app_main(void)
 {
+    // memcpy(mess.message, request_connect_uart, sizeof(request_connect_uart));
+    // esp_read_mac(mess.mac, 1);
+
     uart_config();
-    // uart_event_task();
+
+    // wait_connect_serial();
+    // check_timeout();
     master_espnow_protocol();
-    //     while (1)
-    // {
-    //     add_json();
-    //     vTaskDelay(pdMS_TO_TICKS(1000));
-    // }
-    
+
+    uart_event_task();
 }

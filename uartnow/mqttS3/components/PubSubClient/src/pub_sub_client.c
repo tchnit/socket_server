@@ -32,7 +32,7 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI(MQTT_TAG, "MQTT_EVENT_CONNECTED");
             xEventGroupSetBits(g_mqtt_event_group,g_constant_ConnectBit);
-            // esp_mqtt_client_subscribe(g_mqtt_event_group,"v1/devices/me/rpc/request/+",0);
+            esp_mqtt_client_subscribe(g_mqtt_event_group,"v1/devices/me/rpc/request/+",0);
             break;
         case MQTT_EVENT_DISCONNECTED:
             ESP_LOGI(MQTT_TAG, "MQTT_EVENT_DISCONNECTED");
@@ -50,7 +50,9 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
             break;
         case MQTT_EVENT_DATA:
             ESP_LOGI(MQTT_TAG, "MQTT_RECEIVED DATA");
-            //memcpy(g_buffer_sub, event->data, event->data_len);
+            // memcpy(g_buffer_sub, event->data, event->data_len);
+            ESP_LOGI(MQTT_TAG, "Other event id:%s", event->data);
+
             mqtt_subcriber(event);
             break;
         case MQTT_EVENT_ERROR:

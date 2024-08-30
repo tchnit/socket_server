@@ -1,14 +1,171 @@
 #include "master_espnow_protocol.h"
-// #include "read_serial.h"
-#include "mbedtls/aes.h"
 
+static char payload[MAX_PAYLOAD_LEN]; 
 static int current_index = CURRENT_INDEX;
 static const uint8_t s_master_broadcast_mac[ESP_NOW_ETH_ALEN] = MASTER_BROADCAST_MAC;
 static QueueHandle_t s_master_espnow_queue;
 static master_espnow_send_param_t send_param;
+static master_espnow_send_param_t send_param_specified;
+static uint16_t s_espnow_seq[ESPNOW_DATA_MAX] = { 0, 0 };
 list_slaves_t test_allowed_connect_slaves[MAX_SLAVES];
 list_slaves_t allowed_connect_slaves[MAX_SLAVES];
 list_slaves_t waiting_connect_slaves[MAX_SLAVES];
+
+void prepare_payload(espnow_data_t *espnow_data, float temperature_mcu, int rssi, float temperature_rdo, float do_value, float temperature_phg, float ph_value, const char *message) 
+{
+
+    // Initialize variable sensor_data_t with input parameters
+    sensor_data_t sensor_data = 
+    {
+        .temperature_mcu = temperature_mcu,
+        .rssi = rssi,
+        .temperature_rdo = temperature_rdo,
+        .do_value = do_value,
+        .temperature_phg = temperature_phg,
+        .ph_value = ph_value
+    };
+
+    // Calculate the size of the message
+    size_t message_size = strlen(message);
+
+    // Copy message to sensor_data, ensuring not to exceed the allocated size
+    strncpy(sensor_data.message, message, message_size);
+
+    // Calculate the size of sensor_data_t
+    size_t sensor_data_size = sizeof(sensor_data_t);
+
+    // Make sure that the sensor_data_t size is not larger than the fixed size of the payload
+    if (sensor_data_size > MAX_PAYLOAD_LEN) 
+    {
+        ESP_LOGE(TAG, "The sensor_data_t data is too large to fit in the payload");
+        return;
+    }
+
+    // Copy sensor_data_t into the payload and fill in the rest as needed
+    memcpy(espnow_data->payload, &sensor_data, sensor_data_size);
+
+    // If the data is less than 120 bytes, fill the remainder with 0
+    if (sensor_data_size < MAX_PAYLOAD_LEN) 
+    {
+        memset(espnow_data->payload + sensor_data_size, 0, MAX_PAYLOAD_LEN - sensor_data_size);
+    }
+
+    // Print payload size and data for testing
+    ESP_LOGI(TAG, "     Payload size: %d bytes", MAX_PAYLOAD_LEN);
+    ESP_LOGI(TAG, "         MCU Temperature: %.2f", sensor_data.temperature_mcu);
+    ESP_LOGI(TAG, "         RSSI: %d", sensor_data.rssi);
+    ESP_LOGI(TAG, "         RDO Temperature: %.2f", sensor_data.temperature_rdo);
+    ESP_LOGI(TAG, "         DO Value: %.2f", sensor_data.do_value);
+    ESP_LOGI(TAG, "         PHG Temperature: %.2f", sensor_data.temperature_phg);
+    ESP_LOGI(TAG, "         PH Value: %.2f", sensor_data.ph_value);
+    ESP_LOGI(TAG, "         Message: %s", sensor_data.message);
+
+}
+
+/* Parse ESPNOW data payload. */
+void parse_payload(const espnow_data_t *espnow_data) 
+{
+    if (sizeof(espnow_data->payload) < sizeof(sensor_data_t)) 
+    {
+        ESP_LOGE(TAG, "Payload size is too small to parse sensor_data_t");
+        return;
+    }
+
+    sensor_data_t sensor_data;
+    memcpy(&sensor_data, espnow_data->payload, sizeof(sensor_data_t));
+
+    ESP_LOGI(TAG, "     Parsed ESPNOW payload:");
+    ESP_LOGI(TAG, "         MCU Temperature: %.2f", sensor_data.temperature_mcu);
+    ESP_LOGI(TAG, "         RSSI: %d", sensor_data.rssi);
+    ESP_LOGI(TAG, "         RDO Temperature: %.2f", sensor_data.temperature_rdo);
+    ESP_LOGI(TAG, "         DO Value: %.2f", sensor_data.do_value);
+    ESP_LOGI(TAG, "         PHG Temperature: %.2f", sensor_data.temperature_phg);
+    ESP_LOGI(TAG, "         PH Value: %.2f", sensor_data.ph_value);
+    ESP_LOGI(TAG, "         Message: %s", sensor_data.message);
+
+    memcpy(payload, sensor_data.message, strlen(sensor_data.message) + 1);
+}
+
+/* Prepare ESPNOW data to be sent. */
+void espnow_data_prepare(master_espnow_send_param_t *send_param, const char *message)
+{
+    espnow_data_t *buf = (espnow_data_t *)send_param->buffer;
+
+    assert(send_param->len >= sizeof(espnow_data_t));
+
+    buf->type = IS_BROADCAST_ADDR(send_param->dest_mac) ? ESPNOW_DATA_BROADCAST : ESPNOW_DATA_UNICAST;
+    buf->seq_num = s_espnow_seq[buf->type]++;
+    buf->crc = 0;
+
+    float temperature = read_internal_temperature_sensor();
+    prepare_payload(buf, temperature, -45, 23.1, 7.6, 24.0, 7.2, message);
+
+    buf->crc = esp_crc16_le(UINT16_MAX, (uint8_t const *)buf, send_param->len);
+}
+
+/* Parse received ESPNOW data. */
+void print_hex(const void* data, size_t len){
+const uint8_t *byte_data = (const uint8_t*)data;
+    // ESP_LOGI("UART","Hex Sensor: ");
+    for (int i = 0; i < len; i++) {
+        printf("0x%02X ", byte_data[i]);
+        if ((i + 1) % 20 == 0) {
+            printf("\n");  // Chia dòng sau mỗi 16 bytes cho dễ nhìn
+        }
+    }
+    printf("\n");
+}
+void espnow_data_parse(uint8_t *data, uint16_t data_len)
+{
+    espnow_data_t *buf = (espnow_data_t *)data;
+    uint16_t crc, crc_cal = 0;
+
+    if (data_len < sizeof(espnow_data_t)) 
+    {
+        ESP_LOGE(TAG, "Receive ESPNOW data too short, len:%d", data_len);
+        return;
+    }
+    
+    // Log the data received
+    ESP_LOGI(TAG, "Parsed ESPNOW packed:");
+    ESP_LOGI(TAG, "     type: %d", buf->type);
+    ESP_LOGI(TAG, "     seq_num: %d", buf->seq_num);
+    ESP_LOGI(TAG, "     crc: %d", buf->crc);
+    print_hex(buf, sizeof(data));
+
+    crc = buf->crc;
+    buf->crc = 0;
+    crc_cal = esp_crc16_le(UINT16_MAX, (uint8_t const *)buf, data_len);
+    ESP_LOGI(TAG, " crc_cal: %d", crc_cal);
+
+    if (crc_cal == crc) 
+    {
+        ESP_LOGI(TAG, "CRC check passed.");
+
+    } 
+    else 
+    {
+        ESP_LOGE(TAG, "CRC check failed. Calculated CRC: %d, Received CRC: %d", crc_cal, crc);
+        return;
+    }
+
+        // Log the payload if present
+    if (data_len > sizeof(espnow_data_t)) 
+    {
+        parse_payload(buf);
+        sensor_data_t sensor_data;
+        // buf->crc = crc_cal;
+        memcpy(&sensor_data, buf->payload, sizeof(sensor_data_t));
+        // dump_uart((uint8_t*)buf, sizeof(espnow_data_t));
+        dump_uart((uint8_t*)&sensor_data, sizeof(sensor_data_t));
+
+
+    } 
+    else 
+    {
+        ESP_LOGI(TAG, "  No payload data.");
+    }
+}
 
 void add_peer(const uint8_t *peer_mac, bool encrypt) 
 {   
@@ -32,7 +189,6 @@ void add_peer(const uint8_t *peer_mac, bool encrypt)
     }
 }
 
-
 // Function to save IP MAC Slave waiting to allow
 void add_waiting_connect_slaves(const uint8_t *mac_addr) 
 {
@@ -54,8 +210,7 @@ void add_waiting_connect_slaves(const uint8_t *mac_addr)
         {
             // Empty location, add new MAC address here
             memcpy(waiting_connect_slaves[i].peer_addr, mac_addr, ESP_NOW_ETH_ALEN);
-            ESP_LOGI(TAG, "Added MAC " MACSTR " to waiting allow connect list", MAC2STR(waiting_connect_slaves[i].peer_addr));
-            ESP_LOGW(TAG, "Save waiting allow connect list into NVS");
+            ESP_LOGW(TAG, "Save WAITING_CONNECT_SLAVES_LIST into NVS");
             save_info_slaves_to_nvs("KEY_SLA_WAIT", waiting_connect_slaves); // Save to NVS
             return;
         }
@@ -63,7 +218,7 @@ void add_waiting_connect_slaves(const uint8_t *mac_addr)
     
     // If the list is full, replace the MAC address at the current index in the ring list    
     memcpy(waiting_connect_slaves[current_index].peer_addr, mac_addr, ESP_NOW_ETH_ALEN);
-    ESP_LOGW(TAG, "Waiting allow connect list is full, replaced MAC at index %d with " MACSTR, current_index, MAC2STR(mac_addr));
+    ESP_LOGW(TAG, "WAITING_CONNECT_SLAVES_LIST is full, replaced MAC at index %d with " MACSTR, current_index, MAC2STR(mac_addr));
 
     // Update index for next addition
     current_index = (current_index + 1) % MAX_SLAVES;
@@ -75,28 +230,19 @@ void add_waiting_connect_slaves(const uint8_t *mac_addr)
 /* Function responds with the specified MAC and content*/
 esp_err_t response_specified_mac(const uint8_t *dest_mac, const char *message, bool encrypt)
 {
+    send_param_specified.len = MAX_DATA_LEN;
+
+    memcpy(send_param_specified.dest_mac, dest_mac, ESP_NOW_ETH_ALEN);
+
+    espnow_data_prepare(&send_param_specified, message);
+
     add_peer(dest_mac, encrypt);
-  
-    master_espnow_send_param_t send_param_agree;
-    memset(&send_param_agree, 0, sizeof(master_espnow_send_param_t));
-
-    send_param_agree.len = strlen(message);
-    
-    if (send_param_agree.len > sizeof(send_param_agree.buffer)) {
-        ESP_LOGE(TAG, "Message too long to fit in the buffer");
-        vSemaphoreDelete(s_master_espnow_queue);
-        esp_now_deinit();
-        return ESP_FAIL;
-    }
-
-    memcpy(send_param_agree.dest_mac, dest_mac, ESP_NOW_ETH_ALEN);
-    memcpy(send_param_agree.buffer, message, send_param_agree.len);
 
     // Send the unicast response
-    if (esp_now_send(send_param_agree.dest_mac, send_param_agree.buffer, send_param_agree.len) != ESP_OK) 
+    if (esp_now_send(send_param_specified.dest_mac, send_param_specified.buffer, send_param_specified.len) != ESP_OK) 
     {
         ESP_LOGE(TAG, "Send error");
-        master_espnow_deinit(&send_param_agree);
+        master_espnow_deinit(&send_param_specified);
         vTaskDelete(NULL);
     }
 
@@ -123,15 +269,6 @@ void master_espnow_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status
     ESP_LOGI(TAG, "Send callback: MAC Address " MACSTR ", Status: %s",
         MAC2STR(mac_addr), (status == ESP_NOW_SEND_SUCCESS) ? "Success" : "Fail");
 }
-typedef struct {
-    uint16_t sensor1;
-    uint16_t sensor2;
-    uint16_t sensor3;
-    uint16_t sensor4;
-    uint16_t sensor5;
-    uint8_t mac[6];
-    uint8_t status;
-} sensor_data_t;
 
 void master_espnow_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t *data, int len)
 {
@@ -139,7 +276,6 @@ void master_espnow_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t *
     master_espnow_event_recv_cb_t *recv_cb = &evt.info.recv_cb;
     uint8_t * mac_addr = recv_info->src_addr;
     uint8_t * des_addr = recv_info->des_addr;
-    sensor_data_t *recv_data = (sensor_data_t *)data;
 
     if (mac_addr == NULL || data == NULL || len <= 0) 
     {
@@ -165,13 +301,10 @@ void master_espnow_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t *
     // }
 
     if (IS_BROADCAST_ADDR(des_addr)) 
-    {
-        // Log the MAC address, destination address, and received data
+    {   
         ESP_LOGI(TAG, "_________________________________");
         ESP_LOGI(TAG, "Receive broadcast ESPNOW data");
-        ESP_LOGI(TAG, "Received data from MAC: " MACSTR ", Data Length: %d, Data: %.*s",
-            MAC2STR(recv_cb->mac_addr), recv_cb->data_len, recv_cb->data_len, recv_cb->data);       
-        
+
         bool found = false;
         // Check if the source MAC address is in the allowed slaves list
         for (int i = 0; i < MAX_SLAVES; i++) 
@@ -180,11 +313,17 @@ void master_espnow_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t *
             {
                 if (!allowed_connect_slaves[i].status)  //Slave in status Offline
                 {
-                    // Call a function to response agree connect
-                    allowed_connect_slaves[i].start_time = esp_timer_get_time();
-                    ESP_LOGW(TAG, "---------------------------------");
-                    ESP_LOGW(TAG, "Response AGREE CONNECT to MAC " MACSTR "",  MAC2STR(recv_cb->mac_addr));
-                    response_specified_mac(recv_cb->mac_addr, RESPONSE_AGREE_CONNECT, false);        
+                    // Parse the received data when the condition is met
+                    espnow_data_parse(recv_cb->data, recv_cb->data_len);
+
+                    if (recv_cb->data_len >= strlen(REQUEST_CONNECTION_MSG) && strstr((char *)payload, REQUEST_CONNECTION_MSG) != NULL) 
+                    {
+                        // Call a function to response agree connect
+                        allowed_connect_slaves[i].start_time = esp_timer_get_time();
+                        ESP_LOGW(TAG, "---------------------------------");
+                        ESP_LOGW(TAG, "Response %s to MAC " MACSTR "",RESPONSE_AGREE_CONNECT,  MAC2STR(recv_cb->mac_addr));
+                        response_specified_mac(recv_cb->mac_addr, RESPONSE_AGREE_CONNECT, false);
+                    }        
                 }
                 found = true;
                 break;
@@ -193,52 +332,44 @@ void master_espnow_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t *
         if (!found) 
         {
             // Call a function to add the slave to the waiting_connect_slaves list
-            ESP_LOGW(TAG, "Add MAC " MACSTR " to WAITING CONNECT SLAVES LIST",  MAC2STR(recv_cb->mac_addr));
+            ESP_LOGW(TAG, "Add MAC " MACSTR " to WAITING_CONNECT_SLAVES_LIST",  MAC2STR(recv_cb->mac_addr));
             add_waiting_connect_slaves(recv_cb->mac_addr);
         }  
     } 
     else 
-    {
+    {  
         ESP_LOGI(TAG, "_________________________________");
         ESP_LOGI(TAG, "Receive unicast ESPNOW data");
-        // ESP_LOGI(TAG, "MAC " MACSTR " (length: %d): %.*s",MAC2STR(recv_cb->mac_addr), recv_cb->data_len, recv_cb->data_len, (char *)recv_cb->data);
+
         // Check if the received data is SLAVE_SAVED_MAC_MSG to change status of MAC Online
         for (int i = 0; i < MAX_SLAVES; i++) 
         {
             // Update the status of the corresponding MAC address in allowed_connect_slaves list
             if (memcmp(allowed_connect_slaves[i].peer_addr, recv_cb->mac_addr, ESP_NOW_ETH_ALEN) == 0) 
             {
-                if (recv_cb->data_len >= strlen(SLAVE_SAVED_MAC_MSG) && memcmp(recv_cb->data, SLAVE_SAVED_MAC_MSG, recv_cb->data_len) == 0) 
+                // Parse the received data when the condition is met
+                espnow_data_parse(recv_cb->data, recv_cb->data_len);
+
+                if (recv_cb->data_len >= strlen(SLAVE_SAVED_MAC_MSG) && strstr((char *)payload, SLAVE_SAVED_MAC_MSG) != NULL) 
                 {
                     allowed_connect_slaves[i].status = true; // Set status to Online
                     ESP_LOGI(TAG, "Updated MAC " MACSTR " status to %s", MAC2STR(recv_cb->mac_addr),  allowed_connect_slaves[i].status ? "online" : "offline");
+
                     allowed_connect_slaves[i].start_time = 0;
                     allowed_connect_slaves[i].number_retry = 0;
+
                     break;
                 }
-                else if (recv_cb->data_len >= strlen(STILL_CONNECTED_MSG) && strstr((char *)recv_cb->data, STILL_CONNECTED_MSG) != NULL)
+                else if (recv_cb->data_len >= strlen(STILL_CONNECTED_MSG) && strstr((char *)payload, STILL_CONNECTED_MSG) != NULL)
                 {
                     allowed_connect_slaves[i].start_time = 0;
                     allowed_connect_slaves[i].check_connect_errors = 0;
                     allowed_connect_slaves[i].count_receive++;
 
-                    ESP_LOGI(TAG, "MAC " MACSTR " (length: %d): %.*s",MAC2STR(recv_cb->mac_addr), recv_cb->data_len, recv_cb->data_len, (char *)recv_cb->data);
                     ESP_LOGW(TAG, "Receive from " MACSTR " - Counting: %d", MAC2STR(allowed_connect_slaves[i].peer_addr), allowed_connect_slaves[i].count_receive);
-                    dump_uart((const char *)recv_cb->data);
 
                     break;
                 }
-                else{
-                        // ESP_LOGW("","%s",(char *)recv_cb->data);
-                        ESP_LOGW(TAG, "MAC " MACSTR " (length: %d): %.*s",MAC2STR(recv_cb->mac_addr), recv_cb->data_len, recv_cb->data_len, (char *)recv_cb->data);
-
-                        ESP_LOGW(TAG, "Received data from " MACSTR ": Sensor1=%d, Sensor2=%d, Sensor3=%d, Sensor4=%d, Sensor5=%d, Status=%d",
-                 MAC2STR(mac_addr), recv_data->sensor1, recv_data->sensor2, recv_data->sensor3, recv_data->sensor4, recv_data->sensor5, recv_data->status);
-  
-                        dump_uart((const char *)recv_cb->data);
-
-                }
-
             }
         }
     }
@@ -248,38 +379,30 @@ void master_espnow_task(void *pvParameter)
 {
     master_espnow_send_param_t *send_param = (master_espnow_send_param_t *)pvParameter;
 
-    send_param->len = strlen(CHECK_CONNECTION_MSG);
-
-    if (send_param->len > MAX_DATA_LEN) 
-    {
-        ESP_LOGE(TAG, "Message length exceeds buffer size");
-        free(send_param);
-        vSemaphoreDelete(s_master_espnow_queue);
-        esp_now_deinit();
-        return;
-    }
-
-    memcpy(send_param->buffer, CHECK_CONNECTION_MSG, send_param->len);
+    send_param->len = MAX_DATA_LEN;
 
     while (true) 
     {
-        read_internal_temperature_sensor();
+
+        ESP_LOGE(TAG, "Task master_espnow_task");
 
         // Browse the allowed_connect_slaves list
         for (int i = 0; i < MAX_SLAVES; i++) 
         {
             if (allowed_connect_slaves[i].status) // Check online status
             { 
-                add_peer(allowed_connect_slaves[i].peer_addr, true); 
-
                 // Update destination MAC address
                 memcpy(send_param->dest_mac, allowed_connect_slaves[i].peer_addr, ESP_NOW_ETH_ALEN);
                 ESP_LOGW(TAG, "---------------------------------");
-                ESP_LOGW(TAG, "Send to CHECK CONNECTION to MAC  " MACSTR "", MAC2STR(allowed_connect_slaves[i].peer_addr));
+                ESP_LOGW(TAG, "Send %s to MAC  " MACSTR "",CHECK_CONNECTION_MSG, MAC2STR(allowed_connect_slaves[i].peer_addr));
 
                 // Count the number of packets sent
                 allowed_connect_slaves[i].count_send ++;
                 ESP_LOGW(TAG, "Send to " MACSTR " - Counting: %d", MAC2STR(allowed_connect_slaves[i].peer_addr), allowed_connect_slaves[i].count_send);
+                                       
+                espnow_data_prepare(send_param, CHECK_CONNECTION_MSG); 
+         
+                add_peer(allowed_connect_slaves[i].peer_addr, true);
 
                 if (esp_now_send(send_param->dest_mac, send_param->buffer, send_param->len) != ESP_OK) 
                 {
@@ -303,6 +426,9 @@ void master_espnow_task(void *pvParameter)
                 }
             }
         }
+
+        // esp_deep_sleep_start();
+
         vTaskDelay(pdMS_TO_TICKS(TIME_CHECK_CONNECT));
     }
 }
@@ -312,6 +438,8 @@ void retry_connect_lost_task(void *pvParameter)
 {
     while (true) 
     {
+        ESP_LOGE(TAG, "Task retry_connect_lost_task");
+
         for (int i = 0; i < MAX_SLAVES; i++) 
         {
             switch (allowed_connect_slaves[i].status) 
@@ -322,12 +450,12 @@ void retry_connect_lost_task(void *pvParameter)
                         allowed_connect_slaves[i].end_time =  esp_timer_get_time();
                         uint64_t elapsed_time = allowed_connect_slaves[i].end_time - allowed_connect_slaves[i].start_time;
 
-                        if (elapsed_time > 5 * 1000000) 
+                        if (elapsed_time > RETRY_TIMEOUT) 
                         {
                             if (allowed_connect_slaves[i].number_retry == NUMBER_RETRY)
                             {
                                 ESP_LOGW(TAG, "---------------------------------");
-                                ESP_LOGW(TAG, "Retry AGREE CONNECT with " MACSTR "", MAC2STR(allowed_connect_slaves[i].peer_addr));
+                                ESP_LOGW(TAG, "Retry %s with " MACSTR "",RESPONSE_AGREE_CONNECT, MAC2STR(allowed_connect_slaves[i].peer_addr));
                                 response_specified_mac(allowed_connect_slaves[i].peer_addr, RESPONSE_AGREE_CONNECT, false);        
                                 allowed_connect_slaves[i].number_retry++;
                             }
@@ -346,13 +474,13 @@ void retry_connect_lost_task(void *pvParameter)
                         allowed_connect_slaves[i].end_time =  esp_timer_get_time();
                         uint64_t elapsed_time = allowed_connect_slaves[i].end_time - allowed_connect_slaves[i].start_time;
 
-                        if (elapsed_time > 5 * 1000000) 
+                        if (elapsed_time > RETRY_TIMEOUT) 
                         {
                             allowed_connect_slaves[i].check_connect_errors++;
                             allowed_connect_slaves[i].count_retry++;
 
                             ESP_LOGW(TAG, "---------------------------------");
-                            ESP_LOGW(TAG, "Retry CHECK CONNECT with " MACSTR " Current count retry: %d", MAC2STR(allowed_connect_slaves[i].peer_addr), allowed_connect_slaves[i].count_retry);               
+                            ESP_LOGW(TAG, "Retry %s with " MACSTR " Current count retry: %d",CHECK_CONNECTION_MSG, MAC2STR(allowed_connect_slaves[i].peer_addr), allowed_connect_slaves[i].count_retry);               
                             response_specified_mac(allowed_connect_slaves[i].peer_addr, CHECK_CONNECTION_MSG, true);    
 
                             if (allowed_connect_slaves[i].check_connect_errors == NUMBER_RETRY)
@@ -389,6 +517,9 @@ esp_err_t master_espnow_init(void)
 //     ESP_ERROR_CHECK( esp_now_set_wake_window(CONFIG_ESPNOW_WAKE_WINDOW) );
 //     ESP_ERROR_CHECK( esp_wifi_connectionless_module_set_wake_interval(CONFIG_ESPNOW_WAKE_INTERVAL) );
 // #endif
+
+    esp_sleep_enable_timer_wakeup(ENABLE_TIMER_WAKEUP);
+
     /* Set primary master key. */
     ESP_ERROR_CHECK( esp_now_set_pmk((uint8_t *)CONFIG_ESPNOW_PMK) ); 
     
@@ -400,8 +531,6 @@ esp_err_t master_espnow_init(void)
 
 void master_espnow_deinit(master_espnow_send_param_t *send_param)
 {
-    free(send_param->buffer);
-    free(send_param);
     vSemaphoreDelete(s_master_espnow_queue);
     esp_now_deinit();
 }
@@ -435,5 +564,5 @@ void master_espnow_protocol()
 
     xTaskCreate(master_espnow_task, "master_espnow_task", 4096, &send_param, 4, NULL);
 
-    xTaskCreate(retry_connect_lost_task, "retry_connect_lost_task", 4096, NULL, 5, NULL);
+    // xTaskCreate(retry_connect_lost_task, "retry_connect_lost_task", 4096, NULL, 5, NULL);
 }

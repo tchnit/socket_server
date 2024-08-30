@@ -12,6 +12,8 @@
 #include "connect_wifi.h"
 #include "pub_sub_client.h"
 #include "read_serial.h"
+#include "iot_button.h"
+
 static const char *TAG = "ESP-NOW Master";
 
 
@@ -31,6 +33,7 @@ esp_now_peer_info_t peer_info = {};
 esp_now_peer_info_t peer_broadcast = {};
 
 int8_t rssi;
+uint16_t data2mqtt[120];
 // uint8_t mac_a[6] ={0xDC, 0xDA, 0x0C, 0x0D, 0x41, 0xAC};
 // uint8_t mac_a[6] ={0xDC, 0xDA, 0x0C, 0x0D, 0x41, 0x64};
 
@@ -81,6 +84,55 @@ static void mqtt_task(void *pvParameters)
     vTaskDelete(NULL);
 }
 
+
+// static void button_single_cb(void *arg, void *usr_data)
+// {
+//     static bool status = 0;
+//     ESP_ERROR_CHECK(!(BUTTON_SINGLE_CLICK == iot_button_get_event(arg)));
+//     ESP_LOGI(TAG, "single");
+    
+// }
+
+// static void button_double_cb(void *arg, void *usr_data)
+// {
+//     ESP_ERROR_CHECK(!(BUTTON_DOUBLE_CLICK == iot_button_get_event(arg)));
+//     ESP_LOGI(TAG, "double");
+// }
+connect_request mess_button;
+
+
+static void button_longpress_cb(void *arg, void *usr_data)
+{
+    memcpy(mess_button.message, BUTTON_MSG, sizeof(BUTTON_MSG));
+
+    ESP_ERROR_CHECK(!(BUTTON_LONG_PRESS_START == iot_button_get_event(arg)));
+    dump_uart(&mess_button, sizeof(mess_button));
+    ESP_LOGI(TAG, "long press");
+}
+
+#define LONG_PRESS_TIME_MS 1000
+#define SHORT_PRESS_TIME_MS 100
+void button_init(){
+    // create gpio button
+    button_config_t button_config = {
+        .type = BUTTON_TYPE_GPIO,
+        .long_press_time = LONG_PRESS_TIME_MS,
+        .short_press_time = SHORT_PRESS_TIME_MS,
+        .gpio_button_config = {
+            .gpio_num = 11,
+            .active_level = 0,
+        },
+    };
+    button_handle_t gpio_btn = iot_button_create(&button_config);
+    if(NULL == gpio_btn) {
+        ESP_LOGE(TAG, "Button create failed");
+    }
+    button_handle_t button_handle = iot_button_create(&button_config);
+    // iot_button_register_cb(button_handle, BUTTON_SINGLE_CLICK, button_single_cb, NULL);
+    // iot_button_register_cb(button_handle, BUTTON_DOUBLE_CLICK, button_double_cb, NULL);
+    iot_button_register_cb(button_handle, BUTTON_LONG_PRESS_START, button_longpress_cb, NULL);
+}
+
 #define SSID "Hoai Nam"
 #define PASS "123456789"
 #define BROKER "mqtt://35.240.204.122:1883"
@@ -89,14 +141,24 @@ static void mqtt_task(void *pvParameters)
 #define MAX_RSSI 20
 void app_main(void) {
 
+    button_init();
+    uart_config();
+    uart_event_task();
+    while (true){   
+        if (wait_connect_serial())
+        break;
+        delay(100);
+    }
+
     wifi_init();
     wifi_init_sta(SSID,PASS);
 
-    uart_config();
-    uart_event_task();
+    
 
     mqtt_init(BROKER, USER_NAME, NULL);
     subcribe_to_topic(TOPIC,2);
-    //  xTaskCreate(mqtt_task, "mqtt_task", 5000, NULL, 5, NULL);
+    xTaskCreate(mqtt_task, "mqtt_task", 5000, NULL, 5, NULL);
+    
+    // data_read=0;
 
 }
